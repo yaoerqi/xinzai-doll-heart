@@ -1,0 +1,11 @@
+{
+  "name": "xinzai-doll-heart",
+  "private": true,
+  "version": "0.2.0",
+  "description": "心仔 · 娃娃心脏 Android App 与网页设计预览",
+  "scripts": {
+    "start": "node server.cjs",
+    "check": "node --check app.js && node --check mobile.js && node --check native.js && node --check server.cjs"
+  },
+  "engines": { "node": ">=22" }
+}

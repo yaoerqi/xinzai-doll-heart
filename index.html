@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f7f4ed"><meta name="description" content="心仔 · 把一起走过的日常，变成有温度的回忆。娃娃陪伴 App 交互原型。">
+  <title>心仔 · 每一程，都有你</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="mobile.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#home" aria-label="心仔首页"><span class="brand-mark">♥</span><span>心仔<small>XINZAI</small></span></a>
+      <div class="sidebar-caption">小小的你，大大的世界</div>
+      <nav id="navigation" aria-label="主要导航"></nav>
+      <div class="side-bottom"><div class="mini-heart">♡</div><p>把普通的一天<br>过成我们的纪念日。</p><span>MADE OF LITTLE MOMENTS</span></div>
+      <button class="profile-button" data-action="profile"><img src="assets/doll-hero.png" alt="奶芙头像"><span>奶芙和我的小世界<small>只属于我们的回忆</small></span></button>
+    </aside>
+    <main>
+      <header class="topbar"><div class="breadcrumb">我的小世界 <span>/</span> <b id="page-label">今日陪伴</b></div><div class="top-actions"><span class="demo-label">交互原型 · 演示数据</span><button class="icon-button" data-action="inbox" aria-label="查看奶芙的来信" id="inbox-button"></button><button class="avatar-button" data-action="profile" aria-label="打开娃娃档案"><img src="assets/doll-hero.png" alt=""></button></div></header>
+      <div id="view" tabindex="-1"></div>
+      <footer class="page-footer"><span>每一个小小的瞬间，都值得被珍藏。</span><span>心仔 XINZAI <i>♡</i></span></footer>
+    </main>
+  </div>
+  <dialog id="modal" aria-labelledby="modal-title"><div id="modal-content"></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="native.js"></script><script src="app.js"></script><script src="mobile.js"></script>
+</body>
+</html>
