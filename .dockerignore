@@ -1,0 +1,6 @@
+**
+!memory-core.js
+!sync-core.js
+!cloud/
+!cloud/server.cjs
+!cloud/Dockerfile

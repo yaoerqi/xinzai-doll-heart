@@ -8,5 +8,8 @@ http.createServer((req,res)=>{
   try { target = path.resolve(root, '.' + decodeURIComponent(new URL(req.url,'http://localhost').pathname.replaceAll('\\','/'))); } catch {res.writeHead(400);res.end();return;}
   if(target!==root && !target.startsWith(root+path.sep)){res.writeHead(403);res.end();return;}
   if(target===root)target=path.join(root,'index.html');
+  const relative=path.relative(root,target).replaceAll('\\','/');
+  const publicFiles=new Set(['index.html','app.js','mobile.js','native.js','memory-core.js','experience.js','styles.css','mobile.css','experience.css','sync-core.js','library.js','album.js','cloud.js','library.css']);
+  if(!publicFiles.has(relative)&&!/^assets\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp|svg)$/.test(relative)){res.writeHead(404);res.end('Not found');return;}
   fs.readFile(target,(err,data)=>{if(err){res.writeHead(404);res.end('Not found');return}res.writeHead(200,{'Content-Type':types[path.extname(target)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(data)});
 }).listen(4173,'127.0.0.1',()=>console.log('心仔原型：http://127.0.0.1:4173'));

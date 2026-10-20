@@ -13,7 +13,7 @@ foreach ($required in @($sourceAndroidJar,(Join-Path $buildTools 'aapt2.exe'),(J
     if (!(Test-Path -LiteralPath $required)) { throw "Missing build dependency: $required. See docs/安卓迁移与安装说明.md" }
 }
 New-Item -ItemType Directory -Force -Path $build,$main,(Join-Path $build 'gen'),(Join-Path $build 'classes'),(Join-Path $build 'dex'),$webAssets | Out-Null
-foreach ($name in @('index.html','app.js','styles.css','native.js','mobile.js','mobile.css')) { Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $webAssets -Force }
+foreach ($name in @('index.html','app.js','styles.css','native.js','mobile.js','mobile.css','memory-core.js','experience.js','experience.css','sync-core.js','library.js','album.js','cloud.js','library.css')) { Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $webAssets -Force }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'assets') -Destination $webAssets -Recurse -Force
 Get-ChildItem -LiteralPath $sourceMain | Copy-Item -Destination $main -Recurse -Force
 Copy-Item -LiteralPath $sourceAndroidJar -Destination $androidJar -Force
@@ -29,12 +29,12 @@ Run-Tool (Join-Path $javaRoot 'jar.exe') @('uf',(Join-Path $build 'unsigned.apk'
 Run-Tool (Join-Path $buildTools 'zipalign.exe') @('-f','-p','4',(Join-Path $build 'unsigned.apk'),(Join-Path $build 'aligned.apk'))
 $key = Join-Path $toolRoot 'xinzai-debug.keystore'
 if (!(Test-Path -LiteralPath $key)) { Run-Tool (Join-Path $javaRoot 'keytool.exe') @('-genkeypair','-keystore',$key,'-storepass','android','-keypass','android','-alias','androiddebugkey','-dname','CN=XinZai Development,O=XinZai,C=CN','-keyalg','RSA','-keysize','2048','-validity','10000') }
-$apk = Join-Path $build 'xinzai-0.2.0-debug.apk'
+$apk = Join-Path $build 'xinzai-0.5.0-debug.apk'
 Run-Tool (Join-Path $javaRoot 'java.exe') @('-jar',(Join-Path $buildTools 'lib/apksigner.jar'),'sign','--ks',$key,'--ks-key-alias','androiddebugkey','--ks-pass','pass:android','--key-pass','pass:android','--out',$apk,(Join-Path $build 'aligned.apk'))
 Run-Tool (Join-Path $javaRoot 'java.exe') @('-jar',(Join-Path $buildTools 'lib/apksigner.jar'),'verify','--verbose',$apk)
 Run-Tool (Join-Path $buildTools 'zipalign.exe') @('-c','-p','4',$apk)
 Get-FileHash -LiteralPath $apk -Algorithm SHA256 | Format-List
-$deliveredApk = Join-Path $projectRoot 'output/android/心仔-0.2.0-debug.apk'
+$deliveredApk = Join-Path $projectRoot 'output/android/心仔-0.5.0-debug.apk'
 New-Item -ItemType Directory -Force -Path (Split-Path $deliveredApk -Parent) | Out-Null
 Copy-Item -LiteralPath $apk -Destination $deliveredApk -Force
 Write-Output "Android APK: $deliveredApk"

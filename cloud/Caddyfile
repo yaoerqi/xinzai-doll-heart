@@ -1,0 +1,6 @@
+{$XINZAI_DOMAIN} {
+    request_body {
+        max_size 27MB
+    }
+    reverse_proxy sync:8787
+}

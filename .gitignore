@@ -17,3 +17,7 @@ node_modules/
 *.hprof
 *.keystore
 *.jks
+cloud/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

@@ -21,6 +21,8 @@ public class MainActivity extends Activity {
     private static final int PICK = 10, EXPORT = 11, PERMISSIONS = 12;
     private WebView web;
     private BluetoothController bluetooth;
+    private CloudClient cloud;
+    private final java.util.concurrent.ExecutorService cloudExecutor=java.util.concurrent.Executors.newSingleThreadExecutor();
     private ValueCallback<Uri[]> chooser;
     private JSONObject pendingPermission;
     private byte[] exportBytes;
@@ -61,7 +63,9 @@ public class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(true);
         settings.setTextZoom(100);
         WebView.setWebContentsDebuggingEnabled((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0);
-        bluetooth = new BluetoothController(this, (type, data) -> event(type, data));
+        bluetooth = BluetoothController.get(this);
+        bluetooth.attach((type, data) -> event(type, data));
+        cloud = new CloudClient(this);
         web.addJavascriptInterface(new NativeBridge(), "XinZaiAndroid");
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return !trusted(request.getUrl()); }
@@ -88,7 +92,7 @@ public class MainActivity extends Activity {
                 boolean image = false;
                 for (String type : types) if (type.startsWith("image/")) image=true;
                 intent.setType(image?"image/*":"application/json");
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,false);
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE,image&&params.getMode()==FileChooserParams.MODE_OPEN_MULTIPLE);
                 try { startActivityForResult(intent,PICK); }
                 catch (ActivityNotFoundException e) { chooser.onReceiveValue(null);chooser=null;showMessage("手机没有可用的文件选择器"); }
                 return true;
@@ -116,7 +120,11 @@ public class MainActivity extends Activity {
         JSONObject params=request.optJSONObject("params");if(params==null)params=new JSONObject();
         try {
             switch(action) {
-                case "info": { JSONObject info=new JSONObject();info.put("android",Build.VERSION.RELEASE);info.put("sdk",Build.VERSION.SDK_INT);info.put("model",Build.MANUFACTURER+" "+Build.MODEL);info.put("version","0.2.0");reply(id,info,null);break; }
+                case "cloudStatus":case "cloudLogin":case "cloudRegister":case "cloudPull":case "cloudPush":case "cloudLogout": {
+                    final JSONObject cloudParams=params;
+                    cloudExecutor.execute(()->{try{reply(id,cloud.dispatch(action,cloudParams),null);}catch(Exception e){reply(id,null,e.getMessage()==null?"云同步暂时不可用":e.getMessage());}});break;
+                }
+                case "info": { JSONObject info=new JSONObject();info.put("android",Build.VERSION.RELEASE);info.put("sdk",Build.VERSION.SDK_INT);info.put("model",Build.MANUFACTURER+" "+Build.MODEL);info.put("version","0.5.0");reply(id,info,null);break; }
                 case "export": exportFile(id,params);break;
                 case "haptic": { Vibrator v=(Vibrator)getSystemService(VIBRATOR_SERVICE);if(v!=null&&v.hasVibrator())v.vibrate(VibrationEffect.createWaveform(new long[]{0,35,90,55},-1));reply(id,new JSONObject(),null);break; }
                 case "bleScan": if(ensurePermission(request,blePermissions())){bluetooth.scan();reply(id,new JSONObject(),null);}break;
@@ -126,11 +134,18 @@ public class MainActivity extends Activity {
                 case "bleStatus": reply(id,bluetooth.status(),null);break;
                 case "trackStatus": reply(id,LocationRecorder.snapshot(this),null);break;
                 case "trackStart": {
-                    if(!ensurePermission(request,new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION}))break;
-                    LocationManager lm=(LocationManager)getSystemService(LOCATION_SERVICE);
-                    if(lm==null||(!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)&&!lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)))throw new Exception("请先在手机设置中打开定位，再开始同行");
+                    String source=params.optBoolean("resume")?LocationRecorder.snapshot(this).optString("source","phone"):params.optString("source","phone");
+                    if(!"phone".equals(source)&&!"hardware".equals(source))throw new Exception("未知定位来源");
+                    if("hardware".equals(source)){
+                        if(!ensurePermission(request,blePermissions()))break;
+                        if(!bluetooth.status().optBoolean("trackSyncReady"))throw new Exception("请先连接糖心并等待状态数据");
+                    }else{
+                        if(!ensurePermission(request,new String[]{Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION}))break;
+                        LocationManager lm=(LocationManager)getSystemService(LOCATION_SERVICE);
+                        if(lm==null||(!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)&&!lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)))throw new Exception("请先在手机设置中打开定位，再开始同行");
+                    }
                     if(LocationRecorder.running)throw new Exception("已经有一段旅程正在记录");
-                    LocationRecorder.prepare(this,params.optString("title","一起出门"),params.optBoolean("resume"));
+                    LocationRecorder.prepare(this,params.optString("title","一起出门"),params.optBoolean("resume"),source,bluetooth.status().optString("id"));
                     startForegroundService(new Intent(this,LocationRecorder.class).setAction("start"));
                     handler.postDelayed(()->reply(id,LocationRecorder.snapshot(this),null),300);
                     break;
@@ -184,7 +199,11 @@ public class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int requestCode,int resultCode,Intent data) {
         super.onActivityResult(requestCode,resultCode,data);
-        if(requestCode==PICK&&chooser!=null){Uri uri=resultCode==RESULT_OK&&data!=null?data.getData():null;chooser.onReceiveValue(uri!=null&&"content".equals(uri.getScheme())?new Uri[]{uri}:null);chooser=null;}
+        if(requestCode==PICK&&chooser!=null){
+            List<Uri> selected=new ArrayList<>();
+            if(resultCode==RESULT_OK&&data!=null){if(data.getClipData()!=null){for(int i=0;i<data.getClipData().getItemCount()&&i<10;i++){Uri uri=data.getClipData().getItemAt(i).getUri();if(uri!=null&&"content".equals(uri.getScheme()))selected.add(uri);}}else{Uri uri=data.getData();if(uri!=null&&"content".equals(uri.getScheme()))selected.add(uri);}}
+            chooser.onReceiveValue(selected.isEmpty()?null:selected.toArray(new Uri[0]));chooser=null;
+        }
         if(requestCode==EXPORT&&exportRequest!=null){
             String id=exportRequest;byte[] bytes=exportBytes;exportRequest=null;exportBytes=null;
             if(resultCode!=RESULT_OK||data==null||data.getData()==null){reply(id,null,"已取消保存，回忆仍在 App 中");return;}
@@ -198,5 +217,5 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed(){handleBack();}
     @Override protected void onPause(){super.onPause();if(bluetooth!=null)bluetooth.stopScan();}
     @Override protected void onResume(){super.onResume();if(web!=null&&pageReady)web.evaluateJavascript("window.xinzaiRefreshNative&&window.xinzaiRefreshNative()",null);}
-    @Override protected void onDestroy(){if(chooser!=null)chooser.onReceiveValue(null);if(bluetooth!=null)bluetooth.destroy();handler.removeCallbacksAndMessages(null);if(web!=null){web.removeJavascriptInterface("XinZaiAndroid");web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){if(chooser!=null)chooser.onReceiveValue(null);if(bluetooth!=null)bluetooth.detach();cloudExecutor.shutdownNow();handler.removeCallbacksAndMessages(null);if(web!=null){web.removeJavascriptInterface("XinZaiAndroid");web.destroy();web=null;}super.onDestroy();}
 }

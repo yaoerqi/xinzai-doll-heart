@@ -1,0 +1,78 @@
+/* Run against npm start with Playwright available (NODE_PATH can point to a bundled runtime). */
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+(async()=>{
+ const browser=await chromium.launch({headless:true,channel:'msedge'});
+ const context=await browser.newContext({viewport:{width:390,height:844},acceptDownloads:true});
+ const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const base='http://127.0.0.1:4173';
+ const old={id:'old',title:'去年一起看海',date:'2025-10-04',place:'海边',tag:'一起出门',note:'海风',image:'',city:'青岛',mood:'开心',template:'cream'};
+ await page.goto(base);
+ await page.evaluate(value=>localStorage.setItem('xinzai-v1',JSON.stringify({name:'奶芙',memories:[value],quiet:true,hidePlace:true,onboarded:true})),old);
+ await page.reload();
+ assert.equal(await page.locator('.memory-digest').count(),1);
+ await page.locator('#navigation [data-page="memories"]').click();
+ await page.locator('[data-action="new"]').first().click();
+ await page.locator('[name="note"]').fill('今天和娃娃吃蛋糕');
+ await page.locator('[name="city"]').fill('杭州');
+ await page.locator('[data-action="close"]').click();
+ await page.reload();
+ await page.locator('[data-action="new"]').first().click();
+ await page.locator('[data-experience="resume-draft"]').click();
+ assert.equal(await page.locator('[name="note"]').inputValue(),'今天和娃娃吃蛋糕');
+ await page.locator('[name="makeCard"]').check();
+ await page.locator('#memory-form [type="submit"]').click();
+ await page.locator('.card-preview').waitFor();
+ await page.locator('[data-experience="favorite"]').click();
+ assert.equal(await page.locator('[data-experience="favorite"]').getAttribute('aria-pressed'),'true');
+ await page.locator('[data-action="edit"]').click();
+ await page.locator('[name="title"]').fill('蛋糕日');
+ await page.locator('#memory-form [type="submit"]').click();
+ await page.locator('[data-filter="favorites"]').click();assert.equal(await page.locator('.memory-card').count(),1);
+ await page.locator('.memory-card').click();assert.equal(await page.locator('[data-experience="favorite"]').getAttribute('aria-pressed'),'true');
+ await page.locator('[data-action="delete"]').click();await page.locator('[data-action="confirm-delete"]').click();
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('xinzai-v1')).trash.length),1);
+ await page.locator('#navigation [data-page="profile"]').click();await page.locator('[data-experience="trash"]').click();await page.locator('[data-experience="recover"]').click();await page.locator('[data-action="close"]').click();
+ await page.locator('#navigation [data-page="memories"]').click();await page.locator('[data-experience="clear-filters"]').click();
+ await page.locator('#memory-search').fill('杭州');assert.equal(await page.locator('.memory-card').count(),1);
+ await page.locator('[data-experience="clear-filters"]').click();await page.locator('[data-filter="calendar"]').click();await page.locator('#calendar-month').fill('2024-02');
+ assert.equal(await page.locator('[data-date="2024-02-29"]').count(),1);
+ await page.locator('[data-date="2024-02-29"]').click();assert.equal(await page.locator('[name="date"]').inputValue(),'2024-02-29');
+ await page.locator('[name="note"]').fill('补记闰日');await page.locator('#memory-form [type="submit"]').click();
+ await page.locator('#navigation [data-page="profile"]').click();
+ // Export is re-importable; repeated merge must not duplicate existing memories.
+ const downloadPromise=page.waitForEvent('download');await page.locator('[data-action="backup"]').click();const download=await downloadPromise;
+ const dest=path.resolve('output/qa/roundtrip.json');fs.mkdirSync(path.dirname(dest),{recursive:true});await download.saveAs(dest);
+ await page.locator('[data-action="restore"]').click();await page.locator('#restore-file').setInputFiles(dest);await page.locator('#restore-form button').click();await page.locator('[data-experience="import-merge"]').click();
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('xinzai-v1')).memories.length),3);
+ // A same-ID changed record must survive as a separate copy.
+ const backup=JSON.parse(fs.readFileSync(dest,'utf8'));backup.data.memories[0].note='从另一台手机修改过';
+ await page.locator('#navigation [data-page="profile"]').click();await page.locator('[data-action="restore"]').click();
+ await page.locator('#restore-file').setInputFiles({name:'conflict.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
+ await page.locator('#restore-form button').click();await page.locator('[data-experience="import-merge"]').click();
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('xinzai-v1')).memories.length),4);
+ // A failed save leaves the last committed state untouched and the editor open.
+ await page.locator('[data-action="new"]').first().click();await page.locator('[name="title"]').fill('模拟空间不足');
+ await page.evaluate(()=>{window.originalSet=XinZaiStorage.setItem;XinZaiStorage.setItem=()=>{throw Error('quota');};});
+ await page.locator('#memory-form [type="submit"]').click();assert.equal(await page.locator('#memory-form').count(),1);
+ assert.equal(await page.evaluate(()=>state.memories.length),4);
+ await page.evaluate(()=>{XinZaiStorage.setItem=window.originalSet;});
+ await page.locator('#memory-form [type="submit"]').click();
+ // Photos can be selected, autosaved and exported as a readable PNG.
+ await page.locator('[data-action="new"]').first().click();await page.locator('#photo-input').setInputFiles('assets/doll-cafe.png');
+ await page.waitForFunction(()=>document.querySelector('#memory-form [type="submit"]')?.disabled===false&&!!document.querySelector('#upload-preview img'));
+ await page.locator('[name="makeCard"]').check();await page.locator('#memory-form [type="submit"]').click();
+ const pngPromise=page.waitForEvent('download');await page.locator('[data-action="export-card"]').click();const png=await pngPromise;await png.saveAs('output/qa/card.png');
+ await page.locator('[data-action="close"]').click();
+ await page.locator('#navigation [data-page="home"]').click();await page.screenshot({path:'output/qa/home-mobile.png',fullPage:true});
+ await page.locator('#navigation [data-page="memories"]').click();await page.screenshot({path:'output/qa/memories-mobile.png',fullPage:true});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.setViewportSize({width:1280,height:900});await page.locator('#navigation [data-page="home"]').click();await page.screenshot({path:'output/qa/home-desktop.png',fullPage:true});
+ assert.equal((await page.request.get(base+'/.git/config')).status(),404);
+ assert.equal((await page.request.get(base+'/docs/京东硬件采购清单.md')).status(),404);
+ assert.deepEqual(errors,[]);
+ console.log('PASS: drafts, automatic title, save-to-card, favorite edit persistence, recycle/recover, city search, leap calendar, backup roundtrip, conflict merge, quota rollback, photo and card export, viewport layout, preview file isolation.');
+ await browser.close();
+})().catch(e=>{console.error(e);process.exit(1);});

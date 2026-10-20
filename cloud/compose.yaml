@@ -1,0 +1,29 @@
+services:
+  sync:
+    build:
+      context: ..
+      dockerfile: cloud/Dockerfile
+    restart: unless-stopped
+    environment:
+      XINZAI_INVITE_CODE: ${XINZAI_INVITE_CODE:?Set a private registration invite}
+      XINZAI_ALLOWED_ORIGINS: ${XINZAI_ALLOWED_ORIGINS:-}
+      XINZAI_TRUST_PROXY: "1"
+    volumes:
+      - library:/data
+    mem_limit: 512m
+  gateway:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      XINZAI_DOMAIN: ${XINZAI_DOMAIN:?Set your domain}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+    depends_on:
+      - sync
+volumes:
+  library:
+  certificates:
